@@ -1,13 +1,18 @@
 use std::path::PathBuf;
 
+
 use directories::ProjectDirs;
 use eframe::{
     egui::{self, CentralPanel, Context, ScrollArea, SidePanel, TopBottomPanel, Ui},
     App, Frame, NativeOptions,
 };
+// use egui_extras::markdown::Markdown;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -29,6 +34,7 @@ pub struct AppSettings {
 }
 
 pub struct IndexedragApp {
+    result: Arc<Mutex<Option<String>>>, // Shared state for computation result
     conn: Connection,
     conversation: Conversation,
     current_input: String,
@@ -47,6 +53,7 @@ impl IndexedragApp {
         let conversation = Self::load_or_create_default_conversation(&conn);
         let settings = Self::load_or_create_default_settings(&conn);
         IndexedragApp {
+            result: Arc::new(Mutex::new(None)),
             conn,
             conversation,
             current_input: String::new(),
@@ -190,18 +197,18 @@ impl IndexedragApp {
     }
 
     /// (Stub) This would call external LLM APIs in JSON format. Currently just simulates a response.
-    fn call_llm_api_stub(&mut self, user_input: &str) {
-        // In a real app, you would send the conversation history plus the new user message
-        // to an LLM endpoint, e.g. OpenAI, llama.cpp, etc., in JSON format.
-        // For now, just simulate a response:
-        let system_reply = format!("(Stub) LLM Response to: '{}'", user_input);
+    // fn call_llm_api_stub(&mut self, user_input: &str) {
+    //     // In a real app, you would send the conversation history plus the new user message
+    //     // to an LLM endpoint, e.g. OpenAI, llama.cpp, etc., in JSON format.
+    //     // For now, just simulate a response:
+    //     let system_reply = format!("(Stub) LLM Response to: '{}'", user_input);
 
-        // Add the assistant message
-        self.conversation.messages.push(Message {
-            role: "assistant".into(),
-            content: system_reply,
-        });
-    }
+    //     // Add the assistant message
+    //     self.conversation.messages.push(Message {
+    //         role: "assistant".into(),
+    //         content: system_reply,
+    //     });
+    // }
 
     fn draw_conversation_ui(&mut self, ui: &mut Ui) {
         ScrollArea::vertical()
@@ -209,7 +216,9 @@ impl IndexedragApp {
             .show(ui, |ui| {
                 for msg in &self.conversation.messages {
                     ui.group(|ui| {
-                        ui.label(format!("{}: {}", msg.role, msg.content));
+
+                        // egui_extras::MarkdownViewer::new("").show(ui);
+                        ui.label(format!("{}:\n {}", msg.role, msg.content));
                     });
                     ui.separator();
                 }
@@ -218,6 +227,7 @@ impl IndexedragApp {
         ui.horizontal(|ui| {
             ui.label("Your message:");
             ui.text_edit_singleline(&mut self.current_input);
+
             if ui.button("Send").clicked() {
                 let user_msg = Message {
                     role: "user".to_string(),
@@ -225,10 +235,47 @@ impl IndexedragApp {
                 };
                 self.conversation.messages.push(user_msg);
                 let input_clone = self.current_input.clone();
-                self.call_llm_api_stub(&input_clone);
-                self.current_input.clear();
-                self.save_conversation();
+
+                let result_clone = Arc::clone(&self.result);
+                thread::spawn(move || {
+                    // thread::sleep(Duration::from_secs(5));
+                    *result_clone.lock().unwrap() = Some("# Jelly
+
+[![MIT License](https://img.shields.io/github/license/cs-au-dk/jelly)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@cs-au-dk/jelly)](https://www.npmjs.com/package/@cs-au-dk/jelly)
+
+#### Copyright © 2023 Anders Møller
+
+Jelly is a static analyzer for performing
+
+* *call graphs construction*,
+* *library usage pattern matching*, and
+* *vulnerability exposure analysis*
+".to_string());
+                });
+
+                // self.call_llm_api_stub(&input_clone);
             }
+
+            let mut result = self.result.lock().unwrap();
+            match &*result {
+                Some(value) => {
+                    // Add the assistant message
+                    self.conversation.messages.push(Message {
+                        role: "assistant".into(),
+                        content: value.to_string(),
+                    });
+                    *result = None;
+                    self.current_input.clear();
+                    self.save_conversation();
+
+                    // ui.label("Ready!")
+                }
+                None => {
+                    // ui.label("Computing...")
+                }
+            };
+            // let result_clone = Arc::clone(&self.result);
         });
     }
 
